@@ -2,39 +2,39 @@ import subprocess
 import os
 from flask import Flask, request, jsonify
 
-
 app = Flask(__name__)
 
-def extract_subtitles(video_url, output_dir):
+def extract_subtitles(video_url):
     # Prepare the ffmpeg command to extract subtitles
     command = [
         "ffmpeg", 
         "-y",  # Overwrite output file without asking
         "-i", video_url, 
         "-map", "0:s:0",  # Extract the first subtitle stream
-        f"{output_dir}/subtitles.srt"
+        "-f", "srt",  # Force the subtitle format to SRT
+        "pipe:1"  # Output to stdout (instead of a file)
     ]
     
-    # Execute the command
+    # Execute the command and capture the subtitle output in memory
     try:
         result = subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        return {"status": "success", "message": f"Subtitles extracted successfully! Output: {result.stdout.decode()}"}
+        subtitles = result.stdout.decode()  # Decode the subtitle content from bytes to string
+        return {"status": "success", "subtitles": subtitles}
     except subprocess.CalledProcessError as e:
         return {"status": "error", "message": f"Error occurred: {e.stderr.decode()}"}
 
 # API route to trigger subtitle extraction
 @app.route('/extract_subtitles', methods=['POST'])
 def extract_subtitles_api():
-    # Get video URL and output directory from request
+    # Get video URL from the request
     data = request.get_json()  # This expects JSON data
     video_url = data.get('video_url')
-    output_dir = data.get('output_dir', '/tmp')  # Default output directory in Heroku is /tmp
 
     if not video_url:
         return jsonify({"status": "error", "message": "Missing video_url parameter"}), 400
 
     # Call the subtitle extraction function
-    result = extract_subtitles(video_url, output_dir)
+    result = extract_subtitles(video_url)
 
     return jsonify(result)
 
