@@ -1,9 +1,17 @@
 import subprocess
 import os
+import asyncio
 from flask import Flask, request, jsonify
+from telegram import Bot
+from telegram import InputFile
 
 app = Flask(__name__)
 
+# Telegram bot token (Replace this with your bot's token)
+TELEGRAM_BOT_TOKEN = '7558810237:AAFDfVHQNtdbvx_QVAklBxsVsL7NTM0Q6EU'
+CHANNEL_ID = '-1002252045082'  # Replace with your channel's username or ID
+
+# Function to extract subtitles and return them
 def extract_subtitles(video_url):
     # Prepare the ffmpeg command to extract subtitles
     command = [
@@ -23,7 +31,25 @@ def extract_subtitles(video_url):
     except subprocess.CalledProcessError as e:
         return {"status": "error", "message": f"Error occurred: {e.stderr.decode()}"}
 
-# API route to trigger subtitle extraction
+
+# Function to send subtitle file to Telegram channel asynchronously
+async def upload_subtitles_to_telegram(subtitle_text):
+    # Save the subtitle content to a file
+    temp_file_path = "/tmp/subtitles.srt"
+    with open(temp_file_path, 'w') as f:
+        f.write(subtitle_text)
+
+    # Initialize the Telegram bot
+    bot = Bot(token=TELEGRAM_BOT_TOKEN)
+
+    # Upload the subtitle file to the channel asynchronously
+    with open(temp_file_path, 'rb') as subtitle_file:
+        file = InputFile(subtitle_file, filename="subtitles.srt")
+        message = await bot.send_document(chat_id=CHANNEL_ID, document=file)
+        return message.message_id  # Return the message_id of the uploaded file
+
+
+# API route to trigger subtitle extraction and upload to Telegram
 @app.route('/extract_subtitles', methods=['POST'])
 def extract_subtitles_api():
     # Get video URL from the request
@@ -36,6 +62,14 @@ def extract_subtitles_api():
     # Call the subtitle extraction function
     result = extract_subtitles(video_url)
 
+    if result["status"] == "success":
+        # If subtitles were extracted successfully, upload to Telegram
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        message_id = loop.run_until_complete(upload_subtitles_to_telegram(result["subtitles"]))
+        result["message_id"] = message_id  # Add message_id to the response
+
+    # Return the result as a JSON response
     return jsonify(result)
 
 if __name__ == '__main__':
